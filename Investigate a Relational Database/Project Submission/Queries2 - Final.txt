@@ -1,0 +1,167 @@
+------------------------------------------------------------------------------------------------------------------------------------------
+query1: Top 10 family friendly movies that were rented out based on count
+---------------------------------------------------------------------- --------------------------------------------------------------------
+
+ WITH tab1
+     AS (SELECT f.title AS titl,
+                c.NAME  AS nam
+         FROM   category c
+                JOIN film_category fc
+                  ON c.category_id = fc.category_id
+                JOIN film f
+                  ON f.film_id = fc.film_id
+                JOIN inventory i
+                  ON f.film_id = i.film_id
+                JOIN rental r
+                  ON i.inventory_id = r.inventory_id)
+SELECT DISTINCT( titl )               AS film_title,
+               nam                    AS Film_category,
+               Count(*)
+                 OVER (
+                   partition BY titl) AS rental_count
+FROM   tab1 where nam in ('Animation','Children','Music','Family','Classics','Comedy')
+ORDER  BY 3 DESC limit 10;  
+------------------------------------------------------------------------------------------------------------------------------------------
+query2: Family friendly movie titles, divided into 4 levels (first_quarter, second_quarter, third_quarter, and final_quarter) based on the quartiles (25%, 50%, 75%) of the rental duration for movies
+--------------------------------------------------------------------------------------------------------------------------------------------
+
+ WITH tab1
+     AS (SELECT f.title AS titl,
+                c.NAME  AS nam, f.rental_duration as dur
+         FROM   category c
+                JOIN film_category fc
+                  ON c.category_id = fc.category_id
+                JOIN film f
+                  ON f.film_id = fc.film_id)
+
+
+select titl AS film_title,
+               nam                    AS Film_category,dur as rental_duration,
+ntile(4) over (order by dur ) as std_quartile from tab1 where nam in ('Animation','Children','Music','Family','Classics','Comedy') order by 4 asc; 
+
+------------------------------------------------------------------------------------------------------------------------------------------
+query3: Table with family-friendly film category, each of the quartiles, and the corresponding count of movies within each combination of film category for each corresponding rental duration category. The resulting table has columns:
+
+    Category
+    Rental length category
+    Count
+
+------------------------------------------------------------------------------------------------------------------------------------------
+ WITH tab1
+     AS (SELECT f.title           AS titl,
+                c.NAME            AS nam,
+                f.rental_duration AS dur
+         FROM   category c
+                JOIN film_category fc
+                  ON c.category_id = fc.category_id
+                JOIN film f
+                  ON f.film_id = fc.film_id),
+     tab2
+     AS (SELECT titl               AS film_title,
+                nam                AS Film_category,
+                dur                AS rental_duration,
+                Ntile(4)
+                  OVER (
+                    ORDER BY dur ) AS std_quartile
+         FROM   tab1
+         WHERE  nam IN ( 'Animation', 'Children', 'Music', 'Family',
+                         'Classics', 'Comedy' )
+         ORDER  BY 4 ASC),
+     tab3
+     AS (SELECT DISTINCT( film_category )               AS Category,
+                        std_quartile                    AS STANDARD_QUARTILE,
+                        Count(std_quartile)
+                          OVER (
+                            partition BY std_quartile ) AS Count_OF_MOVIES
+         FROM   tab2
+         WHERE  film_category IN ( 'Animation' )),
+     tab4
+     AS (SELECT DISTINCT( film_category )               AS Category,
+                        std_quartile                    AS STANDARD_QUARTILE,
+                        Count(std_quartile)
+                          OVER (
+                            partition BY std_quartile ) AS Count_OF_MOVIES
+         FROM   tab2
+         WHERE  film_category IN ( 'Children' )),
+     tab5
+     AS (SELECT DISTINCT( film_category )               AS Category,
+                        std_quartile                    AS STANDARD_QUARTILE,
+                        Count(std_quartile)
+                          OVER (
+                            partition BY std_quartile ) AS Count_OF_MOVIES
+         FROM   tab2
+         WHERE  film_category IN ( 'Music' )),
+     tab6
+     AS (SELECT DISTINCT( film_category )               AS Category,
+                        std_quartile                    AS STANDARD_QUARTILE,
+                        Count(std_quartile)
+                          OVER (
+                            partition BY std_quartile ) AS Count_OF_MOVIES
+         FROM   tab2
+         WHERE  film_category IN ( 'Family' )),
+     tab7
+     AS (SELECT DISTINCT( film_category )               AS Category,
+                        std_quartile                    AS STANDARD_QUARTILE,
+                        Count(std_quartile)
+                          OVER (
+                            partition BY std_quartile ) AS Count_OF_MOVIES
+         FROM   tab2
+         WHERE  film_category IN ( 'Classics' )),
+     tab8
+     AS (SELECT DISTINCT( film_category )               AS Category,
+                        std_quartile                    AS STANDARD_QUARTILE,
+                        Count(std_quartile)
+                          OVER (
+                            partition BY std_quartile ) AS Count_OF_MOVIES
+         FROM   tab2
+         WHERE  film_category IN ( 'Comedy' )) 
+
+SELECT *
+FROM   tab3
+UNION ALL
+SELECT *
+FROM   tab4
+UNION ALL
+SELECT *
+FROM   tab5
+UNION ALL
+SELECT *
+FROM   tab6
+UNION ALL
+SELECT *
+FROM   tab7
+UNION ALL
+SELECT *
+FROM   tab8  
+
+------------------------------------------------------------------------------------------------------------------------------------------
+Workspace-Question set 3 - Question 3
+Finally, for each of these top 10 paying customers, I would like to find out the difference across their monthly payments during 2007. Please go ahead and write a query to compare the payment amounts in each successive month. Repeat this for each of these 10 paying customers. Also, it will be tremendously helpful if you can identify the customer name who paid the most difference in terms of payments.
+------------------------------------------------------------------------------------------------------------------------------------------
+ WITH tab1 AS
+(
+         SELECT   Date_trunc('month', p.payment_date)             AS month_in_2007,
+                           Concat(c.first_name, ' ', c.last_name) AS Customer_Name,
+                  Count(*)                                        AS Count_Number,
+                  Sum(p.amount)                                   AS Amount_in_USD
+         FROM     customer c
+         JOIN     rental r
+         ON       c.customer_id=r.customer_id
+         JOIN     payment p
+         ON       r.rental_id= p.rental_id
+         WHERE    Date_part('year', p.payment_date) IN (2007)
+         GROUP BY 1,
+                  2
+         ORDER BY 4 DESC), tab2 AS
+(
+       SELECT *
+       FROM   tab1 limit 10)
+SELECT   *,
+         Lead(Amount_in_USD) OVER (partition BY Customer_Name ORDER BY month_in_2007)       AS Lead,
+         Lead(Amount_in_USD) OVER (partition BY Customer_Name ORDER BY month_in_2007) - Amount_in_USD AS Difference
+FROM     tab1
+WHERE    Customer_Name IN
+         (
+                SELECT Customer_Name
+                FROM   tab2) 
+------------------------------------------------------------------------------------------------------------------------------------------
